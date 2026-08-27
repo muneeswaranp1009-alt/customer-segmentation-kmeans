@@ -1,0 +1,94 @@
+import os
+import pandas as pd
+import joblib
+import warnings
+import matplotlib.pyplot as plt 
+import seaborn as sns 
+import numpy as np 
+
+warnings.filterwarnings('ignore')
+
+from sklearn.preprocessing import StandardScaler
+from sklearn.cluster import KMeans
+from sklearn.metrics import silhouette_score
+
+def train_cluster_model():
+    
+    curren_folder = os.path.dirname(os.path.abspath(__file__)) if '__file__' in globals() else os.getcwd()
+    file_path = os.path.join(curren_folder,"Mall_Customers.csv")
+    
+    try:
+        cus_df = pd.read_csv(file_path)
+        
+    except FileNotFoundError:
+        print(f"File not found at {file_path}. Please check the file path.")
+        return 
+    except pd.errors.EmptyDataError:
+        print("Error : The Given Csv File is Empty!")
+        return
+    except Exception as e:
+        print(f"Error: Somthing Wrong! {e}")
+        return
+    
+    cus_df = cus_df.fillna(cus_df.median(numeric_only=True))
+    
+    print("\nSelecting Features and Scaling")
+    x = cus_df[['Annual Income (k$)', 'Spending Score (1-100)']]
+    scaler = StandardScaler()
+    x_scaled = scaler.fit_transform(x)
+    
+    print("\nFINDING OPTIMAL 'K' (Elbow Method)")
+    wcss = []
+    for k in range(1, 11):
+        km = KMeans(n_clusters=k, init='k-means++', random_state=42, n_init=10)
+        km.fit(x_scaled)
+        wcss.append(km.inertia_)
+        
+    print("\nApply K-Mean Algorithm (k=5)...")
+    optimal_k = 5
+    Kmeans = KMeans(n_clusters=optimal_k, init='k-means++', random_state=42, n_init=10)
+    cus_df['Cluster'] = Kmeans.fit_predict(x_scaled)
+    
+    print("\nEvaluation")
+    sil_score = silhouette_score(x_scaled, cus_df['Cluster'])
+    print(f"\nSilhouette Score: {sil_score:.2f}% (Quality of clusters)")
+
+    def get_profile(cluster_num):
+        centroids = scaler.inverse_transform(Kmeans.cluster_centers_)
+        income, score = centroids[cluster_num]
+        if income > 60 and score > 60: return "High Income – High Spending"
+        elif income > 60 and score < 40: return "High Income – Low Spending"
+        elif income < 40 and score > 60: return "Low Income – High Spending"
+        elif income < 40 and score < 40: return "Low Income – Low Spending"
+        else: return "Average Income – Average Spending"
+
+    cus_df['Customer_Profile'] = cus_df['Cluster'].apply(get_profile)
+
+    print("\n--- Output Results (First 10 Rows) ---")
+    print(cus_df[['CustomerID', 'Cluster', 'Customer_Profile']].head(10).to_string(index=False))
+    
+    print("\nGENERATING VISUALIZATIONS...")
+    plt.figure(figsize=(18, 5))
+    
+    plt.subplot(1, 3, 1)
+    plt.plot(range(1, 11), wcss, marker='o', color='b')
+    plt.title('1. Elbow Method')
+    
+    plt.subplot(1, 3, 2)
+    sns.scatterplot(x='Annual Income (k$)', y='Spending Score (1-100)', 
+                    hue='Customer_Profile', data=cus_df, palette='Set1', s=80)
+    centroids = scaler.inverse_transform(Kmeans.cluster_centers_)
+    plt.scatter(centroids[:, 0], centroids[:, 1], s=200, c='black', marker='X')
+    plt.title('2. Clusters & Centroids')
+    
+    plt.subplot(1, 3, 3)
+    sns.countplot(y='Customer_Profile', data=cus_df, palette='Set2')
+    plt.title('3. Cluster Distribution')
+    
+    plt.tight_layout()
+    plt.show()
+        
+if __name__ == "__main__":
+    train_cluster_model()
+    
+        
